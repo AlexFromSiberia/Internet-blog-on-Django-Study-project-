@@ -2,6 +2,7 @@ from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import login_required
 from .models import Topic, Entry
 from .forms import TopicForm, EntryForm
+from django.http import Http404
 
 
 def index(request):
@@ -19,9 +20,13 @@ def topics(request):
 @login_required
 def topic(request, topic_id):
     """Выводит одну тему и все ее записи."""
-    topic = Topic.objects.get(id = topic_id)
+    topic = Topic.objects.get(id=topic_id)
+    # Make sure the topic belongs to the current user
+    if topic.owner != request.user:
+        raise Http404
+
     entries = topic.entry_set.order_by('-date_added')
-    context = {'topic' : topic, 'entries' : entries}
+    context = {'topic': topic, 'entries': entries}
     return render(request, 'learning_logs/topic.html', context)
 
 @login_required
@@ -34,7 +39,9 @@ def new_topic(request):
         # POST data sent, process data
         form = TopicForm(data=request.POST)
         if form.is_valid():
-            form.save()
+            new_topic = form.save(commit=False)
+            new_topic.owner = request.user
+            new_topic.save()
             return redirect('learning_logs:topics')
     # make empty or invalid form
     context = {'form': form}
@@ -44,6 +51,9 @@ def new_topic(request):
 def new_entry(request, topic_id):
     """Defines new entry for a particular topic"""
     topic = Topic.objects.get(id=topic_id)
+    if topic.owner != request.user:
+        raise Http404
+
     if request.method != 'POST':
         # No data sent, creating new form
         form = EntryForm()
@@ -64,6 +74,10 @@ def edit_entry(request, entry_id):
     """Edit an existing entry."""
     entry = Entry.objects.get(id=entry_id)
     topic = entry.topic
+    # protecting edit_entry pages
+    if topic.owner != request.user:
+        raise Http404
+
     if request.method != 'POST':
         # Initial request; pre-fill form with the current entry.
         form = EntryForm(instance=entry)
